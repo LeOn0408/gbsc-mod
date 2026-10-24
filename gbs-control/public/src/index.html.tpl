@@ -1080,6 +1080,8 @@
                   <div class="gbs-icon">grain</div>
                   <div>step response</div>
                 </button>
+              </div>
+              <div class="gbs-flex gbs-margin__bottom--8">
                 <button
                   gbs-message="J"
                   gbs-message-type="user"
