@@ -1080,11 +1080,30 @@
                   <div class="gbs-icon">grain</div>
                   <div>step response</div>
                 </button>
+                <button
+                  gbs-message="J"
+                  gbs-message-type="user"
+                  gbs-click="normal"
+                  class="gbs-button gbs-button__control gbs-button__secondary"
+                >
+                  <div class="gbs-icon">auto_fix_high</div>
+                  <div>NR</div>
+                </button>
+                <button
+                  gbs-message="Y"
+                  gbs-message-type="user"
+                  gbs-click="normal"
+                  class="gbs-button gbs-button__control gbs-button__secondary"
+                >
+                  <div class="gbs-icon">details</div>
+                  <div>sharp+</div>
+                </button>
               </div>
               <ul class="gbs-help">
                 <!-- prettier-ignore -->
                 <li>Peaking increases contrast around horizontal brightness steps, and is recommended.</li>
                 <li>Step Response increases the sharpness of horizontal color steps, and is recommended.</li>
+                <li>NR cycles VDS noise reduction Off/Low/Med/High. Sharp+ cycles peaking gain 0..3.</li>
               </ul>
           </fieldset>
           <fieldset class="gbs-fieldset filters">

@@ -140,6 +140,9 @@ enum TVMODE_PresetPreference : uint8_t {
     uint16_t screenHScale_pal; \
     uint16_t screenVScale_pal; \
     /* Per-slot SyncWatcher override */ \
-    uint8_t  slotSyncwatcherMode;   /* 0=inherit global, 1=force ON, 2=force OFF */
+    uint8_t  slotSyncwatcherMode;   /* 0=inherit global, 1=force ON, 2=force OFF */ \
+    /* VDS image processing globals */ \
+    uint8_t  nrMode;                /* noise reduction: 0=off, 1=low, 2=medium, 3=high */ \
+    uint8_t  peakingLevel;          /* peaking/sharpness gain: 0..3 */
 
 #endif // OPTIONS_PRO_H_

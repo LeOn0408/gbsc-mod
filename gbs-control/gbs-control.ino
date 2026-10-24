@@ -1069,6 +1069,55 @@ void applyHdmiLimitedRange()
     }
 }
 
+// VDS noise reduction (0=off, 1=low, 2=medium, 3=high).
+// The preset defaults have Y/C NR bypassed; this block enables it for noisy
+// analog RGB/YPbPr sources. Peaking coring is raised when NR is active.
+void applyNoiseReduction()
+{
+    if (uopt->nrMode == 0) {
+        GBS::VDS_NR_Y_BYPS::write(1);
+        GBS::VDS_NR_C_BYPS::write(1);
+        GBS::VDS_NR_DIF_LPF5_BYPS::write(1);
+        GBS::VDS_NR_MI_TH_EN::write(0);
+        GBS::VDS_PK_LB_CORE::write(0);
+        GBS::VDS_PK_LH_CORE::write(0);
+        return;
+    }
+
+    GBS::VDS_NR_Y_BYPS::write(0);
+    GBS::VDS_NR_C_BYPS::write(0);
+    GBS::VDS_NR_DIF_LPF5_BYPS::write(uopt->nrMode >= 2 ? 0 : 1);
+    GBS::VDS_NR_MI_TH_EN::write(uopt->nrMode >= 2 ? 1 : 0);
+    GBS::VDS_NR_MI_THRES::write(uopt->nrMode >= 3 ? 15 : 10);
+    GBS::VDS_NR_MI_GAIN::write(uopt->nrMode >= 3 ? 8 : 4);
+    GBS::VDS_NR_STILL_GAIN::write(uopt->nrMode >= 3 ? 8 : 2);
+    GBS::VDS_NR_EN_H_NOISY::write(uopt->nrMode >= 3 ? 1 : 0);
+    GBS::VDS_NR_EN_GLB_STILL::write(uopt->nrMode >= 2 ? 1 : 0);
+    GBS::VDS_PK_LB_CORE::write(1);
+    GBS::VDS_PK_LH_CORE::write(1);
+}
+
+// Peaking (horizontal sharpness) gain levels, 0..3.
+void applyPeakingLevel()
+{
+    uint8_t lb, lh;
+    switch (uopt->peakingLevel) {
+        case 0:  lb = 0x16; lh = 0x18; break;
+        case 1:  lb = 0x22; lh = 0x22; break;
+        case 2:  lb = 0x2f; lh = 0x2f; break;
+        default: lb = 0x3f; lh = 0x3f; break;
+    }
+    if (rto->presetID == 0x05 || rto->presetID == 0x15) {
+        lh = (uopt->peakingLevel == 0) ? 0x0A : lh;
+    }
+    GBS::VDS_PK_LB_GAIN::write(lb);
+    GBS::VDS_PK_LH_GAIN::write(lh);
+    if (uopt->peakingLevel > 0) {
+        GBS::VDS_PK_LB_CORE::write(1);
+        GBS::VDS_PK_LH_CORE::write(1);
+    }
+}
+
 /// Write ADC gain registers, and save in adco->r_gain to properly transfer it
 /// across loading presets or passthrough.
 void setAdcGain(uint8_t gain) {
@@ -4194,6 +4243,10 @@ void doPostPresetLoadSteps()
 
     // HDMI Limited Range (must be after applyRGBtoYUVConversion)
     applyHdmiLimitedRange();
+
+    // VDS noise reduction / peaking levels (override preset defaults)
+    applyNoiseReduction();
+    applyPeakingLevel();
 
     SerialM.print(F("\npreset applied: "));
     if (rto->presetID == 0x01 || rto->presetID == 0x11)
@@ -7758,6 +7811,9 @@ void loadDefaultUserOptions()
     uopt->screenVScale_ntsc = 0;     uopt->screenVScale_pal = 0;
     // Per-slot SyncWatcher mode (inherit global)
     uopt->slotSyncwatcherMode = 0;
+    // VDS image processing defaults
+    uopt->nrMode = 0;
+    uopt->peakingLevel = 0;
 }
 
 //RF_PRE_INIT() {
@@ -8263,6 +8319,12 @@ void setup()
                 if (okN && hmN <= 4095) uopt->screenHMove_ntsc = hmN;
                 if (okN && okP && hmP <= 4095) uopt->screenHMove_pal = hmP;
             }
+
+            // Image processing levels (defaults if the file predates them)
+            int nr = f.read();
+            uopt->nrMode = (nr >= '0' && nr <= '3') ? (uint8_t)(nr - '0') : 0;
+            int pl = f.read();
+            uopt->peakingLevel = (pl >= '0' && pl <= '3') ? (uint8_t)(pl - '0') : 0;
 
             f.close();
         }
@@ -10357,6 +10419,22 @@ void handleType2Command(char argument)
             SerialM.print(F("Scanline Brightness: "));
             SerialM.println(uopt->scanlineStrength, HEX);
             break;
+        case 'J': // Noise reduction: Off -> Low -> Medium -> High
+            uopt->nrMode = (uopt->nrMode + 1) & 0x03;
+            applyNoiseReduction();
+            applyPeakingLevel();
+            saveUserPrefs();
+            SerialM.print(F("Noise reduction: "));
+            SerialM.println(uopt->nrMode);
+            break;
+        case 'Y': // Peaking level: 0..3
+            uopt->peakingLevel = (uopt->peakingLevel + 1) & 0x03;
+            applyNoiseReduction();
+            applyPeakingLevel();
+            saveUserPrefs();
+            SerialM.print(F("Peaking level: "));
+            SerialM.println(uopt->peakingLevel);
+            break;
         case 'W':
             // Sharpness
             if (GBS::VDS_PK_LB_GAIN::read() == 0x16) {
@@ -11724,6 +11802,9 @@ void saveUserPrefs()
     snprintf(hbuf, sizeof(hbuf), "%04u%04u",
              (unsigned)uopt->screenHMove_ntsc, (unsigned)uopt->screenHMove_pal);
     f.write((const uint8_t *)hbuf, 8);
+    // Image processing levels
+    f.write(uopt->nrMode + '0');
+    f.write(uopt->peakingLevel + '0');
     f.close();
 }
 
