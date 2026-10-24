@@ -37,6 +37,7 @@
 
 static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t numValues);
 const uint8_t *loadPresetFromLittleFS(byte forVideoMode);
+void initUpdateOTA();
 bool loadSlotSettings();
 
 SSD1306Wire display(0x3c, D2, D1); //inits I2C address & pins for OLED
@@ -215,6 +216,8 @@ char serialCommand;               // Serial / Web Server commands
 String serialCommandBuffer = "";  // Buffering for Web Server commands
 char userCommand;               // Serial / Web Server commands
 String userCommandBuffer = "";  // Buffering for Web Server commands
+static bool screenMoveDirty = false;            // horizontal screen position changed, save later
+static unsigned long screenMoveLastChange = 0;  // debounce flash writes while holding a move button
 static uint8_t lastSegment = 0xFF; // GBS segment for direct access
 //uint8_t globalDelay; // used for dev / debug
 
@@ -1063,6 +1066,55 @@ void applyHdmiLimitedRange()
         GBS::VDS_Y_GAIN::write((uint8_t)newGain);
         GBS::VDS_Y_OFST::write((uint8_t)(int8_t)newOffset);
         SerialM.println(F("HDMI Limited Range applied"));
+    }
+}
+
+// VDS noise reduction (0=off, 1=low, 2=medium, 3=high).
+// The preset defaults have Y/C NR bypassed; this block enables it for noisy
+// analog RGB/YPbPr sources. Peaking coring is raised when NR is active.
+void applyNoiseReduction()
+{
+    if (uopt->nrMode == 0) {
+        GBS::VDS_NR_Y_BYPS::write(1);
+        GBS::VDS_NR_C_BYPS::write(1);
+        GBS::VDS_NR_DIF_LPF5_BYPS::write(1);
+        GBS::VDS_NR_MI_TH_EN::write(0);
+        GBS::VDS_PK_LB_CORE::write(0);
+        GBS::VDS_PK_LH_CORE::write(0);
+        return;
+    }
+
+    GBS::VDS_NR_Y_BYPS::write(0);
+    GBS::VDS_NR_C_BYPS::write(0);
+    GBS::VDS_NR_DIF_LPF5_BYPS::write(uopt->nrMode >= 2 ? 0 : 1);
+    GBS::VDS_NR_MI_TH_EN::write(uopt->nrMode >= 2 ? 1 : 0);
+    GBS::VDS_NR_MI_THRES::write(uopt->nrMode >= 3 ? 15 : 10);
+    GBS::VDS_NR_MI_GAIN::write(uopt->nrMode >= 3 ? 8 : 4);
+    GBS::VDS_NR_STILL_GAIN::write(uopt->nrMode >= 3 ? 8 : 2);
+    GBS::VDS_NR_EN_H_NOISY::write(uopt->nrMode >= 3 ? 1 : 0);
+    GBS::VDS_NR_EN_GLB_STILL::write(uopt->nrMode >= 2 ? 1 : 0);
+    GBS::VDS_PK_LB_CORE::write(1);
+    GBS::VDS_PK_LH_CORE::write(1);
+}
+
+// Peaking (horizontal sharpness) gain levels, 0..3.
+void applyPeakingLevel()
+{
+    uint8_t lb, lh;
+    switch (uopt->peakingLevel) {
+        case 0:  lb = 0x16; lh = 0x18; break;
+        case 1:  lb = 0x22; lh = 0x22; break;
+        case 2:  lb = 0x2f; lh = 0x2f; break;
+        default: lb = 0x3f; lh = 0x3f; break;
+    }
+    if (rto->presetID == 0x05 || rto->presetID == 0x15) {
+        lh = (uopt->peakingLevel == 0) ? 0x0A : lh;
+    }
+    GBS::VDS_PK_LB_GAIN::write(lb);
+    GBS::VDS_PK_LH_GAIN::write(lh);
+    if (uopt->peakingLevel > 0) {
+        GBS::VDS_PK_LB_CORE::write(1);
+        GBS::VDS_PK_LH_CORE::write(1);
     }
 }
 
@@ -4191,6 +4243,10 @@ void doPostPresetLoadSteps()
 
     // HDMI Limited Range (must be after applyRGBtoYUVConversion)
     applyHdmiLimitedRange();
+
+    // VDS noise reduction / peaking levels (override preset defaults)
+    applyNoiseReduction();
+    applyPeakingLevel();
 
     SerialM.print(F("\npreset applied: "));
     if (rto->presetID == 0x01 || rto->presetID == 0x11)
@@ -7755,6 +7811,9 @@ void loadDefaultUserOptions()
     uopt->screenVScale_ntsc = 0;     uopt->screenVScale_pal = 0;
     // Per-slot SyncWatcher mode (inherit global)
     uopt->slotSyncwatcherMode = 0;
+    // VDS image processing defaults
+    uopt->nrMode = 0;
+    uopt->peakingLevel = 0;
 }
 
 //RF_PRE_INIT() {
@@ -8052,6 +8111,9 @@ void setup()
             uopt->presetPreference = (PresetPreference)(f.read() - '0'); // #1
             if (uopt->presetPreference > 10)
                 uopt->presetPreference = Output960P; // fresh LittleFS ?
+            // v2.4.1-mod: the experimental 1280x800 mode was removed; recover old prefs.
+            if ((uint8_t)uopt->presetPreference == 7)
+                uopt->presetPreference = Output720P;
 
             uopt->enableFrameTimeLock = (uint8_t)(f.read() - '0');
             if (uopt->enableFrameTimeLock > 1)
@@ -8236,6 +8298,33 @@ void setup()
             // ADV Hue
             uopt->advHue = (uint8_t)((f.read() - '0') * 100 + (f.read() - '0') * 10 + (f.read() - '0'));
             if (uopt->advHue > 254) uopt->advHue = 128;
+
+            // Screen horizontal move (PRO): 4 digits NTSC + 4 digits PAL.
+            // Older preferences files end here; keep defaults in that case.
+            {
+                uint16_t hmN = 0, hmP = 0;
+                bool okN = true, okP = true;
+                for (int i = 0; i < 4; i++) {
+                    int c = f.read();
+                    if (c < '0' || c > '9') { okN = false; break; }
+                    hmN = hmN * 10 + (c - '0');
+                }
+                if (okN) {
+                    for (int i = 0; i < 4; i++) {
+                        int c = f.read();
+                        if (c < '0' || c > '9') { okP = false; break; }
+                        hmP = hmP * 10 + (c - '0');
+                    }
+                }
+                if (okN && hmN <= 4095) uopt->screenHMove_ntsc = hmN;
+                if (okN && okP && hmP <= 4095) uopt->screenHMove_pal = hmP;
+            }
+
+            // Image processing levels (defaults if the file predates them)
+            int nr = f.read();
+            uopt->nrMode = (nr >= '0' && nr <= '3') ? (uint8_t)(nr - '0') : 0;
+            int pl = f.read();
+            uopt->peakingLevel = (pl >= '0' && pl <= '3') ? (uint8_t)(pl - '0') : 0;
 
             f.close();
         }
@@ -8566,6 +8655,16 @@ void updateWebSocketData()
 void handleWiFi(boolean instant)
 {
     static unsigned long lastTimePing = millis();
+    static bool otaStarted = false;
+
+    // Bring ArduinoOTA up automatically once the station is connected, so the
+    // ESP8266 can be updated over WiFi without opening the case or using USB.
+    if (!otaStarted && WiFi.status() == WL_CONNECTED) {
+        initUpdateOTA();
+        rto->allowUpdatesOTA = true;
+        otaStarted = true;
+    }
+
     if (rto->webServerEnabled && rto->webServerStarted) {
         MDNS.update();
         persWM.handleWiFi(); // if connected, returns instantly. otherwise it reconnects or opens AP
@@ -8635,6 +8734,12 @@ void loop()
     }
 
     handleWiFi(0); // WiFi + OTA + WS + MDNS, checks for server enabled + started
+
+    // Persist horizontal position after the user stops pressing move.
+    if (screenMoveDirty && (millis() - screenMoveLastChange) > 1500) {
+        screenMoveDirty = false;
+        saveUserPrefs();
+    }
 
     if ((millis() - lastSignalTime) >= 100) {
         ADV_applyPendingOptions();
@@ -9145,6 +9250,8 @@ void loop()
                             GBS::IF_LINE_SP::write(GBS::IF_LINE_SP::read() - 4);     // and 1_22 to go with it
                         }
                         setScreenHMove(GBS::IF_HBIN_SP::read());
+                        screenMoveDirty = true;
+                        screenMoveLastChange = millis();
                     } else {
                         SerialM.println("limit");
                     }
@@ -9168,6 +9275,8 @@ void loop()
                     if (GBS::IF_HBIN_SP::read() < 0x150) {                   // (arbitrary) max limit
                         GBS::IF_HBIN_SP::write(GBS::IF_HBIN_SP::read() + 8); // canvas move left
                         setScreenHMove(GBS::IF_HBIN_SP::read());
+                        screenMoveDirty = true;
+                        screenMoveLastChange = millis();
                     } else {
                         SerialM.println("limit");
                     }
@@ -10310,6 +10419,22 @@ void handleType2Command(char argument)
             SerialM.print(F("Scanline Brightness: "));
             SerialM.println(uopt->scanlineStrength, HEX);
             break;
+        case 'J': // Noise reduction: Off -> Low -> Medium -> High
+            uopt->nrMode = (uopt->nrMode + 1) & 0x03;
+            applyNoiseReduction();
+            applyPeakingLevel();
+            saveUserPrefs();
+            SerialM.print(F("Noise reduction: "));
+            SerialM.println(uopt->nrMode);
+            break;
+        case 'Y': // Peaking level: 0..3
+            uopt->peakingLevel = (uopt->peakingLevel + 1) & 0x03;
+            applyNoiseReduction();
+            applyPeakingLevel();
+            saveUserPrefs();
+            SerialM.print(F("Peaking level: "));
+            SerialM.println(uopt->peakingLevel);
+            break;
         case 'W':
             // Sharpness
             if (GBS::VDS_PK_LB_GAIN::read() == 0x16) {
@@ -11346,7 +11471,7 @@ void startWebserver()
 
 void initUpdateOTA()
 {
-    ArduinoOTA.setHostname("GBS OTA");
+    ArduinoOTA.setHostname("gbsc-mod");
 
     // ArduinoOTA.setPassword("admin");
     // Password can be set with it's md5 value as well
@@ -11672,6 +11797,14 @@ void saveUserPrefs()
     f.write(uopt->advHue / 100 + '0');
     f.write((uopt->advHue / 10) % 10 + '0');
     f.write(uopt->advHue % 10 + '0');
+    // Screen horizontal move (PRO): 4 digits NTSC + 4 digits PAL
+    char hbuf[9];
+    snprintf(hbuf, sizeof(hbuf), "%04u%04u",
+             (unsigned)uopt->screenHMove_ntsc, (unsigned)uopt->screenHMove_pal);
+    f.write((const uint8_t *)hbuf, 8);
+    // Image processing levels
+    f.write(uopt->nrMode + '0');
+    f.write(uopt->peakingLevel + '0');
     f.close();
 }
 
