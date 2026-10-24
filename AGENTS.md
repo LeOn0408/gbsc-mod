@@ -21,6 +21,12 @@ python -m platformio run -t upload
 ```
 Artifact: `gbs-control/.pio/build/gbsc-pro/firmware.bin`.
 
+OTA over WiFi (no USB): ArduinoOTA starts automatically after the station connects (hostname `gbsc-mod`, no password). Push with:
+```bash
+cd gbs-control
+python -m platformio run -e gbsc-pro-ota -t upload --upload-port <device-ip>
+```
+
 HC32F460:
 ```bash
 cd adv-controller && make         # make debug | make clean | make size

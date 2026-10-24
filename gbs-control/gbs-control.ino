@@ -37,6 +37,7 @@
 
 static inline void writeBytes(uint8_t slaveRegister, uint8_t *values, uint8_t numValues);
 const uint8_t *loadPresetFromLittleFS(byte forVideoMode);
+void initUpdateOTA();
 bool loadSlotSettings();
 
 SSD1306Wire display(0x3c, D2, D1); //inits I2C address & pins for OLED
@@ -8592,6 +8593,16 @@ void updateWebSocketData()
 void handleWiFi(boolean instant)
 {
     static unsigned long lastTimePing = millis();
+    static bool otaStarted = false;
+
+    // Bring ArduinoOTA up automatically once the station is connected, so the
+    // ESP8266 can be updated over WiFi without opening the case or using USB.
+    if (!otaStarted && WiFi.status() == WL_CONNECTED) {
+        initUpdateOTA();
+        rto->allowUpdatesOTA = true;
+        otaStarted = true;
+    }
+
     if (rto->webServerEnabled && rto->webServerStarted) {
         MDNS.update();
         persWM.handleWiFi(); // if connected, returns instantly. otherwise it reconnects or opens AP
@@ -11375,7 +11386,7 @@ void startWebserver()
 
 void initUpdateOTA()
 {
-    ArduinoOTA.setHostname("GBS OTA");
+    ArduinoOTA.setHostname("gbsc-mod");
 
     // ArduinoOTA.setPassword("admin");
     // Password can be set with it's md5 value as well
