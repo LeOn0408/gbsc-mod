@@ -2668,6 +2668,24 @@ void set_vtotal(uint16_t vtotal)
     GBS::VDS_VSYN_SIZE2::write(GBS::VDS_VSYNC_RST::read() + 2);
 }
 
+// 1280x800 output for 16:10 panels (e.g. UNEW CX101-E).
+// Uses the 108 MHz display clock of the base preset, EDID-compatible totals:
+//   NTSC/60 Hz: 2192 x 821 = 60.006 Hz
+//   PAL/50 Hz : 2631 x 821 = 49.998 Hz
+// Sync polarity matches the panel's preferred timing (-H/-V).
+void applyOutput800p(bool palInput)
+{
+    set_htotal(palInput ? 2631 : 2192);
+    set_vtotal(821);
+
+    // Scale the base preset's vertical ratio from 720/1024 lines to 800.
+    GBS::VDS_VSCALE::write(palInput ? 655 : 615);
+    GBS::VDS_VSCALE_BYPS::write(0);
+
+    invertHS();
+    invertVS();
+}
+
 void resetDebugPort()
 {
     GBS::PAD_BOUT_EN::write(1); // output to pad enabled
@@ -3694,7 +3712,9 @@ void doPostPresetLoadSteps()
                 GBS::IF_HB_SP2::write(0xB0);                         // 1_1a
                 GBS::IF_HB_ST2::write(0x4BC);                        // 1_18
             } else if (rto->presetID == 0x3) {                       // out 720p
-                GBS::VDS_VSCALE::write(683);                         // same as base preset
+                if (uopt->presetPreference != Output800P) {
+                    GBS::VDS_VSCALE::write(683);                     // same as base preset
+                }
                 GBS::IF_HB_ST2::write(0x478);                        // 1_18
                 GBS::IF_HB_SP2::write(0x84);                         // 1_1a
             } else if (rto->presetID == 0x2) {                       // out x1024
@@ -4765,6 +4785,9 @@ void applyPresets(uint8_t result)
             writeProgramArrayNew(ntsc_720x480, false);
         } else if (uopt->presetPreference == 3) {
             writeProgramArrayNew(ntsc_1280x720, false);
+        } else if (uopt->presetPreference == Output800P) {
+            writeProgramArrayNew(ntsc_1280x720, false);
+            applyOutput800p(false);
         }
 #if defined(ESP8266)
         else if (uopt->presetPreference == OutputCustomized) {
@@ -4800,6 +4823,9 @@ void applyPresets(uint8_t result)
             writeProgramArrayNew(pal_768x576, false);
         } else if (uopt->presetPreference == 3) {
             writeProgramArrayNew(pal_1280x720, false);
+        } else if (uopt->presetPreference == Output800P) {
+            writeProgramArrayNew(pal_1280x1024, false);
+            applyOutput800p(true);
         }
 #if defined(ESP8266)
         else if (uopt->presetPreference == OutputCustomized) {
@@ -9991,6 +10017,7 @@ void handleType2Command(char argument)
         case 'f':
         case 'g':
         case 'h':
+        case 'k':
         case 'p':
         case 's':
         case 'L': {
@@ -10010,6 +10037,8 @@ void handleType2Command(char argument)
                 uopt->presetPreference = Output1024P; // 1280x1024
             if (argument == 's')
                 uopt->presetPreference = Output1080P; // 1920x1080
+            if (argument == 'k')
+                uopt->presetPreference = Output800P; // 1280x800
             // if (argument == 'L')
             //   uopt->presetPreference = OutputDownscale; // downscale
 
