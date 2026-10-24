@@ -387,6 +387,12 @@ void externalClockGenSyncInOutRate()
         return;
     }
 
+    // 1280x800 must stay at ~60 Hz; don't let the clock sync pull it back to 50 Hz.
+    if (uopt->presetPreference == Output800P && sfr < 55.0f) {
+        SerialM.println(F("800p: keeping 60 Hz output for 50 Hz source"));
+        return;
+    }
+
     float ofr = getOutputFrameRate();
     if (ofr < 47.0f || ofr > 86.0f) {
         SerialM.print(F("sync skipped ofr wrong: "));
@@ -2685,6 +2691,15 @@ void applyOutput800p(bool palInput)
 
     invertHS();
     invertVS();
+
+    SerialM.print(F("800p: extclk="));
+    SerialM.print(rto->extClockGenDetected);
+    SerialM.print(F(" htotal="));
+    SerialM.print(GBS::VDS_HSYNC_RST::read());
+    SerialM.print(F(" vtotal="));
+    SerialM.print(GBS::VDS_VSYNC_RST::read());
+    SerialM.print(F(" vscale="));
+    SerialM.println(GBS::VDS_VSCALE::read());
 }
 
 void resetDebugPort()
@@ -4693,7 +4708,9 @@ void applyPresets(uint8_t result)
         }
     }
 
-    if (uopt->PalForce60 == 1) {
+    // 1280x800 panels are 60 Hz only, so automatically force PAL 50 -> 60
+    // for this output mode instead of relying on the user preference.
+    if (uopt->PalForce60 == 1 || uopt->presetPreference == Output800P) {
         if (uopt->presetPreference != 2) { // != custom. custom saved as pal preset has ntsc customization
             if (result == 2 || result == 4) {
                 //Serial.println(F("PAL@50 to 60Hz"));
