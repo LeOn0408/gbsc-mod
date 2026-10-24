@@ -216,6 +216,8 @@ char serialCommand;               // Serial / Web Server commands
 String serialCommandBuffer = "";  // Buffering for Web Server commands
 char userCommand;               // Serial / Web Server commands
 String userCommandBuffer = "";  // Buffering for Web Server commands
+static bool screenMoveDirty = false;            // horizontal screen position changed, save later
+static unsigned long screenMoveLastChange = 0;  // debounce flash writes while holding a move button
 static uint8_t lastSegment = 0xFF; // GBS segment for direct access
 //uint8_t globalDelay; // used for dev / debug
 
@@ -8241,6 +8243,27 @@ void setup()
             uopt->advHue = (uint8_t)((f.read() - '0') * 100 + (f.read() - '0') * 10 + (f.read() - '0'));
             if (uopt->advHue > 254) uopt->advHue = 128;
 
+            // Screen horizontal move (PRO): 4 digits NTSC + 4 digits PAL.
+            // Older preferences files end here; keep defaults in that case.
+            {
+                uint16_t hmN = 0, hmP = 0;
+                bool okN = true, okP = true;
+                for (int i = 0; i < 4; i++) {
+                    int c = f.read();
+                    if (c < '0' || c > '9') { okN = false; break; }
+                    hmN = hmN * 10 + (c - '0');
+                }
+                if (okN) {
+                    for (int i = 0; i < 4; i++) {
+                        int c = f.read();
+                        if (c < '0' || c > '9') { okP = false; break; }
+                        hmP = hmP * 10 + (c - '0');
+                    }
+                }
+                if (okN && hmN <= 4095) uopt->screenHMove_ntsc = hmN;
+                if (okN && okP && hmP <= 4095) uopt->screenHMove_pal = hmP;
+            }
+
             f.close();
         }
     }
@@ -8649,6 +8672,12 @@ void loop()
     }
 
     handleWiFi(0); // WiFi + OTA + WS + MDNS, checks for server enabled + started
+
+    // Persist horizontal position after the user stops pressing move.
+    if (screenMoveDirty && (millis() - screenMoveLastChange) > 1500) {
+        screenMoveDirty = false;
+        saveUserPrefs();
+    }
 
     if ((millis() - lastSignalTime) >= 100) {
         ADV_applyPendingOptions();
@@ -9159,6 +9188,8 @@ void loop()
                             GBS::IF_LINE_SP::write(GBS::IF_LINE_SP::read() - 4);     // and 1_22 to go with it
                         }
                         setScreenHMove(GBS::IF_HBIN_SP::read());
+                        screenMoveDirty = true;
+                        screenMoveLastChange = millis();
                     } else {
                         SerialM.println("limit");
                     }
@@ -9182,6 +9213,8 @@ void loop()
                     if (GBS::IF_HBIN_SP::read() < 0x150) {                   // (arbitrary) max limit
                         GBS::IF_HBIN_SP::write(GBS::IF_HBIN_SP::read() + 8); // canvas move left
                         setScreenHMove(GBS::IF_HBIN_SP::read());
+                        screenMoveDirty = true;
+                        screenMoveLastChange = millis();
                     } else {
                         SerialM.println("limit");
                     }
@@ -11686,6 +11719,11 @@ void saveUserPrefs()
     f.write(uopt->advHue / 100 + '0');
     f.write((uopt->advHue / 10) % 10 + '0');
     f.write(uopt->advHue % 10 + '0');
+    // Screen horizontal move (PRO): 4 digits NTSC + 4 digits PAL
+    char hbuf[9];
+    snprintf(hbuf, sizeof(hbuf), "%04u%04u",
+             (unsigned)uopt->screenHMove_ntsc, (unsigned)uopt->screenHMove_pal);
+    f.write((const uint8_t *)hbuf, 8);
     f.close();
 }
 
