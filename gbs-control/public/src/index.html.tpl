@@ -192,16 +192,6 @@
               </button>
               <button
                 class="gbs-button gbs-button__resolution"
-                gbs-message="k"
-                gbs-message-type="user"
-                gbs-click="normal"
-                gbs-element-ref="button1280x800"
-                gbs-role="preset"
-              >
-                1280 <span>x800</span>
-              </button>
-              <button
-                class="gbs-button gbs-button__resolution"
                 gbs-message="h"
                 gbs-message-type="user"
                 gbs-click="normal"

@@ -387,12 +387,6 @@ void externalClockGenSyncInOutRate()
         return;
     }
 
-    // 1280x800 must stay at ~60 Hz; don't let the clock sync pull it back to 50 Hz.
-    if (uopt->presetPreference == Output800P && sfr < 55.0f) {
-        SerialM.println(F("800p: keeping 60 Hz output for 50 Hz source"));
-        return;
-    }
-
     float ofr = getOutputFrameRate();
     if (ofr < 47.0f || ofr > 86.0f) {
         SerialM.print(F("sync skipped ofr wrong: "));
@@ -2675,33 +2669,6 @@ void set_vtotal(uint16_t vtotal)
     GBS::VDS_VSYN_SIZE2::write(GBS::VDS_VSYNC_RST::read() + 2);
 }
 
-// 1280x800 output for 16:10 panels (e.g. UNEW CX101-E).
-// Uses the 108 MHz display clock of the base preset, EDID-compatible totals:
-//   NTSC/60 Hz: 2192 x 821 = 60.006 Hz
-//   PAL/50 Hz : 2631 x 821 = 49.998 Hz
-// Sync polarity matches the panel's preferred timing (-H/-V).
-void applyOutput800p(bool palInput)
-{
-    set_htotal(palInput ? 2631 : 2192);
-    set_vtotal(821);
-
-    // Scale the base preset's vertical ratio from 720/1024 lines to 800.
-    GBS::VDS_VSCALE::write(palInput ? 655 : 615);
-    GBS::VDS_VSCALE_BYPS::write(0);
-
-    invertHS();
-    invertVS();
-
-    SerialM.print(F("800p: extclk="));
-    SerialM.print(rto->extClockGenDetected);
-    SerialM.print(F(" htotal="));
-    SerialM.print(GBS::VDS_HSYNC_RST::read());
-    SerialM.print(F(" vtotal="));
-    SerialM.print(GBS::VDS_VSYNC_RST::read());
-    SerialM.print(F(" vscale="));
-    SerialM.println(GBS::VDS_VSCALE::read());
-}
-
 void resetDebugPort()
 {
     GBS::PAD_BOUT_EN::write(1); // output to pad enabled
@@ -3728,9 +3695,7 @@ void doPostPresetLoadSteps()
                 GBS::IF_HB_SP2::write(0xB0);                         // 1_1a
                 GBS::IF_HB_ST2::write(0x4BC);                        // 1_18
             } else if (rto->presetID == 0x3) {                       // out 720p
-                if (uopt->presetPreference != Output800P) {
-                    GBS::VDS_VSCALE::write(683);                     // same as base preset
-                }
+                GBS::VDS_VSCALE::write(683);                         // same as base preset
                 GBS::IF_HB_ST2::write(0x478);                        // 1_18
                 GBS::IF_HB_SP2::write(0x84);                         // 1_1a
             } else if (rto->presetID == 0x2) {                       // out x1024
@@ -4708,9 +4673,7 @@ void applyPresets(uint8_t result)
         }
     }
 
-    // 1280x800 panels are 60 Hz only, so automatically force PAL 50 -> 60
-    // for this output mode instead of relying on the user preference.
-    if (uopt->PalForce60 == 1 || uopt->presetPreference == Output800P) {
+    if (uopt->PalForce60 == 1) {
         if (uopt->presetPreference != 2) { // != custom. custom saved as pal preset has ntsc customization
             if (result == 2 || result == 4) {
                 //Serial.println(F("PAL@50 to 60Hz"));
@@ -4803,9 +4766,6 @@ void applyPresets(uint8_t result)
             writeProgramArrayNew(ntsc_720x480, false);
         } else if (uopt->presetPreference == 3) {
             writeProgramArrayNew(ntsc_1280x720, false);
-        } else if (uopt->presetPreference == Output800P) {
-            writeProgramArrayNew(ntsc_1280x720, false);
-            applyOutput800p(false);
         }
 #if defined(ESP8266)
         else if (uopt->presetPreference == OutputCustomized) {
@@ -4841,9 +4801,6 @@ void applyPresets(uint8_t result)
             writeProgramArrayNew(pal_768x576, false);
         } else if (uopt->presetPreference == 3) {
             writeProgramArrayNew(pal_1280x720, false);
-        } else if (uopt->presetPreference == Output800P) {
-            writeProgramArrayNew(pal_1280x1024, false);
-            applyOutput800p(true);
         }
 #if defined(ESP8266)
         else if (uopt->presetPreference == OutputCustomized) {
@@ -8096,6 +8053,9 @@ void setup()
             uopt->presetPreference = (PresetPreference)(f.read() - '0'); // #1
             if (uopt->presetPreference > 10)
                 uopt->presetPreference = Output960P; // fresh LittleFS ?
+            // v2.4.1-mod: the experimental 1280x800 mode was removed; recover old prefs.
+            if ((uint8_t)uopt->presetPreference == 7)
+                uopt->presetPreference = Output720P;
 
             uopt->enableFrameTimeLock = (uint8_t)(f.read() - '0');
             if (uopt->enableFrameTimeLock > 1)
@@ -10045,7 +10005,6 @@ void handleType2Command(char argument)
         case 'f':
         case 'g':
         case 'h':
-        case 'k':
         case 'p':
         case 's':
         case 'L': {
@@ -10065,8 +10024,6 @@ void handleType2Command(char argument)
                 uopt->presetPreference = Output1024P; // 1280x1024
             if (argument == 's')
                 uopt->presetPreference = Output1080P; // 1920x1080
-            if (argument == 'k')
-                uopt->presetPreference = Output800P; // 1280x800
             // if (argument == 'L')
             //   uopt->presetPreference = OutputDownscale; // downscale
 
