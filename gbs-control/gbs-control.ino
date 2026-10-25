@@ -218,6 +218,12 @@ char userCommand;               // Serial / Web Server commands
 String userCommandBuffer = "";  // Buffering for Web Server commands
 static bool screenMoveDirty = false;            // horizontal screen position changed, save later
 static unsigned long screenMoveLastChange = 0;  // debounce flash writes while holding a move button
+static volatile bool gbscModPending = false;    // apply /gbscmod changes in the main loop
+static volatile bool safeRebootRequested = false; // reset experimental settings and reboot
+static volatile bool colorPending = false;        // apply color changes from the main loop
+static bool imageTuningPending = false;          // apply ADC/SOG/geometry after sync is stable
+static unsigned long imageTuningSetAt = 0;
+static bool sogAutoRequested = false;            // re-run auto SOG after sync settles
 static uint8_t lastSegment = 0xFF; // GBS segment for direct access
 //uint8_t globalDelay; // used for dev / debug
 
@@ -1130,21 +1136,46 @@ void applyBlackLevel()
     GBS::VDS_Y_OFST::write((uint8_t)(int8_t)y);
 }
 
-// 4:3 pillarbox for 1280x720 output: keep 720 lines, use 960 active pixels
-// centered horizontally (160 px black bars left/right).
-void applyPillarbox4x3()
+// Persistent color adjustments: saturation, tint and RGB balance.
+// The RGB balance is converted to U/V offsets with the same BT.601 matrix
+// used by applyRGBtoYUVConversion(), but Y offset (black level) is untouched.
+void applyColorSettings()
 {
-    if (!uopt->pillarbox4x3) {
-        return;
-    }
-    if (rto->presetID != 0x03 && rto->presetID != 0x13) {
-        return; // only 1280x720 presets
-    }
-    if (rto->videoStandardInput > 4) {
-        return; // only SD/ED sources
+    int sat = uopt->colorSaturation;
+    GBS::VDS_UCOS_GAIN::write(constrain(28 + sat, 1, 63));
+    GBS::VDS_VCOS_GAIN::write(constrain(41 + sat, 1, 63));
+
+    int r = (int)uopt->gbsColorR - 128;
+    int g = (int)uopt->gbsColorG - 128;
+    int b = (int)uopt->gbsColorB - 128;
+    int u = (int)(-0.14713f * r - 0.28886f * g + 0.436f * b) + uopt->colorTint;
+    int v = (int)(0.615f * r - 0.51499f * g - 0.10001f * b) - uopt->colorTint;
+    u = constrain(u, -128, 127);
+    v = constrain(v, -128, 127);
+
+    GBS::VDS_U_OFST::write((uint8_t)(int8_t)u);
+    GBS::VDS_V_OFST::write((uint8_t)(int8_t)v);
+
+    if (uopt->colorYGain) {
+        GBS::VDS_Y_GAIN::write(uopt->colorYGain);
     }
 
-    bool pal = (rto->presetID == 0x13);
+    SerialM.print(F("color: sat="));
+    SerialM.print(sat);
+    SerialM.print(F(" tint="));
+    SerialM.print(uopt->colorTint);
+    SerialM.print(F(" rgb="));
+    SerialM.print(uopt->gbsColorR);
+    SerialM.print(F(","));
+    SerialM.print(uopt->gbsColorG);
+    SerialM.print(F(","));
+    SerialM.println(uopt->gbsColorB);
+}
+
+// 4:3 pillarbox for 1280x720 output: keep 720 lines, use 960 active pixels
+// centered horizontally (160 px black bars left/right).
+void applyPillarbox4x3(bool pal)
+{
     GBS::VDS_HSCALE::write(pal ? 835 : 683);
     GBS::VDS_HSCALE_BYPS::write(0);
 
@@ -1176,7 +1207,75 @@ void applyPillarbox4x3()
         GBS::VDS_DIS_HB_ST::write((uint16_t)(dnewStop % htotal));
     }
 
-    SerialM.println(F("4:3 pillarbox"));
+    SerialM.println(F("geometry: 4:3 pillarbox"));
+}
+
+// Zoom 4:3 content to fill 16:9: crop source top/bottom, then scale to 1280x720.
+void applyZoom16x9(bool pal)
+{
+    int crop = pal ? 72 : 60;
+    uint16_t st = GBS::IF_VB_ST::read();
+    uint16_t sp = GBS::IF_VB_SP::read();
+    if (sp <= st + (uint16_t)(2 * crop)) {
+        SerialM.println(F("geometry: zoom skipped (bad input window)"));
+        return;
+    }
+    GBS::IF_VB_ST::write(st + crop);
+    GBS::IF_VB_SP::write(sp - crop);
+    GBS::VDS_HSCALE::write(pal ? 626 : 512);
+    GBS::VDS_VSCALE::write(pal ? 614 : 512);
+    GBS::VDS_HSCALE_BYPS::write(0);
+    GBS::VDS_VSCALE_BYPS::write(0);
+    SerialM.println(F("geometry: zoom 16:9"));
+}
+
+// Overscan: crop ~2.5% of the source edges and scale back to 1280x720.
+void applyOverscan(bool pal)
+{
+    int cropH = pal ? 18 : 16;
+    int cropV = pal ? 14 : 12;
+    uint16_t hst = GBS::IF_HB_ST::read(), hsp = GBS::IF_HB_SP::read();
+    uint16_t vst = GBS::IF_VB_ST::read(), vsp = GBS::IF_VB_SP::read();
+    if (hsp <= hst + (uint16_t)(2 * cropH) || vsp <= vst + (uint16_t)(2 * cropV)) {
+        SerialM.println(F("geometry: overscan skipped (bad input window)"));
+        return;
+    }
+    GBS::IF_HB_ST::write(hst + cropH);
+    GBS::IF_HB_SP::write(hsp - cropH);
+    GBS::IF_VB_ST::write(vst + cropV);
+    GBS::IF_VB_SP::write(vsp - cropV);
+    GBS::VDS_HSCALE::write(pal ? 595 : 486);
+    GBS::VDS_VSCALE::write(pal ? 780 : 649);
+    GBS::VDS_HSCALE_BYPS::write(0);
+    GBS::VDS_VSCALE_BYPS::write(0);
+    SerialM.println(F("geometry: overscan"));
+}
+
+void applyGeometry()
+{
+    if (rto->presetID != 0x03 && rto->presetID != 0x13) return;
+    if (rto->videoStandardInput < 1 || rto->videoStandardInput > 4) return;
+    bool pal = (rto->presetID == 0x13);
+    switch (uopt->geometryMode) {
+        case 1: applyPillarbox4x3(pal); break;
+        default: break;
+    }
+}
+
+void applyAdcFilter()
+{
+    if (uopt->adcFilterMode >= 1 && uopt->adcFilterMode <= 4) {
+        GBS::ADC_FLTR::write(uopt->adcFilterMode - 1);
+        SerialM.print(F("ADC filter: "));
+        SerialM.println(uopt->adcFilterMode - 1);
+    }
+}
+
+void applySogLevel()
+{
+    if (uopt->sogLevel <= 16) {
+        setAndUpdateSogLevel(uopt->sogLevel);
+    }
 }
 
 /// Write ADC gain registers, and save in adco->r_gain to properly transfer it
@@ -4308,12 +4407,17 @@ void doPostPresetLoadSteps()
     // User black level offset (after color balance / range compensation)
     applyBlackLevel();
 
+    // Persistent saturation / tint / RGB balance
+    applyColorSettings();
+
     // VDS noise reduction / peaking levels (override preset defaults)
     applyNoiseReduction();
     applyPeakingLevel();
 
-    // Optional 4:3 pillarbox for 720p
-    applyPillarbox4x3();
+    // ADC / SOG / geometry modify input windows and must not run until the
+    // sync processor has settled. The main loop applies them after a delay.
+    imageTuningPending = true;
+    imageTuningSetAt = millis();
 
     SerialM.print(F("\npreset applied: "));
     if (rto->presetID == 0x01 || rto->presetID == 0x11)
@@ -7882,7 +7986,12 @@ void loadDefaultUserOptions()
     uopt->nrMode = 0;
     uopt->peakingLevel = 0;
     uopt->blackLevel = 0;
-    uopt->pillarbox4x3 = 0;
+    uopt->geometryMode = 0;
+    uopt->adcFilterMode = 0;
+    uopt->sogLevel = 0xFF;
+    uopt->colorSaturation = 0;
+    uopt->colorTint = 0;
+    uopt->colorYGain = 0;
 }
 
 //RF_PRE_INIT() {
@@ -8402,8 +8511,46 @@ void setup()
             } else {
                 uopt->blackLevel = 0;
             }
-            int pb = f.read();
-            uopt->pillarbox4x3 = (pb == '1') ? 1 : 0;
+            int gm = f.read();
+            uopt->geometryMode = (gm >= '0' && gm <= '3') ? (uint8_t)(gm - '0') : 0;
+            if (uopt->geometryMode > 1) uopt->geometryMode = 0; // Zoom/Overscan disabled
+            int af = f.read();
+            uopt->adcFilterMode = (af >= '0' && af <= '4') ? (uint8_t)(af - '0') : 0;
+            int s1 = f.read(), s2 = f.read();
+            if (s1 >= '0' && s1 <= '9' && s2 >= '0' && s2 <= '9') {
+                int sog = (s1 - '0') * 10 + (s2 - '0');
+                uopt->sogLevel = (sog == 99) ? 0xFF : (sog <= 16 ? (uint8_t)sog : 0xFF);
+            } else {
+                uopt->sogLevel = 0xFF;
+            }
+
+            // ADC/SOG experiments are session-only. Always boot with auto
+            // values so a bad manual setting cannot corrupt the startup image.
+            uopt->adcFilterMode = 0;
+            uopt->sogLevel = 0xFF;
+
+            // Color: saturation/tint encoded +64, absolute Y gain (3 digits)
+            int c1 = f.read(), c2 = f.read();
+            if (c1 >= '0' && c1 <= '9' && c2 >= '0' && c2 <= '9') {
+                int sat = (c1 - '0') * 10 + (c2 - '0');
+                uopt->colorSaturation = (sat >= 44 && sat <= 84) ? (int8_t)(sat - 64) : 0;
+            } else {
+                uopt->colorSaturation = 0;
+            }
+            int t1 = f.read(), t2 = f.read();
+            if (t1 >= '0' && t1 <= '9' && t2 >= '0' && t2 <= '9') {
+                int tint = (t1 - '0') * 10 + (t2 - '0');
+                uopt->colorTint = (tint >= 32 && tint <= 96) ? (int8_t)(tint - 64) : 0;
+            } else {
+                uopt->colorTint = 0;
+            }
+            int y1 = f.read(), y2 = f.read(), y3 = f.read();
+            if (y1 >= '0' && y1 <= '9' && y2 >= '0' && y2 <= '9' && y3 >= '0' && y3 <= '9') {
+                int yg = (y1 - '0') * 100 + (y2 - '0') * 10 + (y3 - '0');
+                uopt->colorYGain = (yg <= 255) ? (uint8_t)yg : 0;
+            } else {
+                uopt->colorYGain = 0;
+            }
 
             f.close();
         }
@@ -8813,6 +8960,42 @@ void loop()
     }
 
     handleWiFi(0); // WiFi + OTA + WS + MDNS, checks for server enabled + started
+
+    // Apply geometry / ADC / SOG / PS2 profile changes from the main loop,
+    // not from the AsyncWebServer callback (I2C and presets are not reentrant).
+    if (safeRebootRequested) {
+        safeRebootRequested = false;
+        gbscModPending = false;
+        saveUserPrefs();
+        delay(50);
+        ESP.reset();
+    }
+
+    if (gbscModPending) {
+        gbscModPending = false;
+        saveUserPrefs();
+        applyPresets(rto->videoStandardInput);
+    }
+
+    // Apply ADC/SOG/geometry only after the input timing is stable.
+    if (imageTuningPending && !rto->outModeHdBypass &&
+        (rto->continousStableCounter >= 10 || (millis() - imageTuningSetAt) > 2500)) {
+        imageTuningPending = false;
+        applyAdcFilter();
+        applySogLevel();
+        if (sogAutoRequested) {
+            sogAutoRequested = false;
+            optimizeSogLevel();
+        }
+        applyGeometry();
+    }
+
+    if (colorPending) {
+        colorPending = false;
+        applyColorSettings();
+        screenMoveDirty = true;
+        screenMoveLastChange = millis();
+    }
 
     // Persist horizontal position after the user stops pressing move.
     if (screenMoveDirty && (millis() - screenMoveLastChange) > 1500) {
@@ -10506,11 +10689,11 @@ void handleType2Command(char argument)
             SerialM.print(F("Noise reduction: "));
             SerialM.println(uopt->nrMode);
             break;
-        case 'G': // 4:3 pillarbox toggle (720p)
-            uopt->pillarbox4x3 = !uopt->pillarbox4x3;
+        case 'G': // quick 16:9 <-> 4:3 toggle (720p)
+            uopt->geometryMode = (uopt->geometryMode == 1) ? 0 : 1;
             saveUserPrefs();
-            SerialM.print(F("4:3 pillarbox: "));
-            SerialM.println(uopt->pillarbox4x3 ? "on" : "off");
+            SerialM.print(F("geometry mode: "));
+            SerialM.println(uopt->geometryMode);
             applyPresets(rto->videoStandardInput);
             break;
         case 'Y': // Peaking level: 0..3
@@ -10565,12 +10748,18 @@ void handleType2Command(char argument)
         case 'N':
             // Contrast +
             GBS::VDS_Y_GAIN::write(GBS::VDS_Y_GAIN::read() + 1);
+            uopt->colorYGain = GBS::VDS_Y_GAIN::read();
+            screenMoveDirty = true;
+            screenMoveLastChange = millis();
             SerialM.print(F("Contrast + : "));
             SerialM.println(GBS::VDS_Y_GAIN::read(), DEC);
             break;
         case 'M':
             // Contrast -
             GBS::VDS_Y_GAIN::write(GBS::VDS_Y_GAIN::read() - 1);
+            uopt->colorYGain = GBS::VDS_Y_GAIN::read();
+            screenMoveDirty = true;
+            screenMoveLastChange = millis();
             SerialM.print(F("Contrast - : "));
             SerialM.println(GBS::VDS_Y_GAIN::read(), DEC);
             break;
@@ -10699,6 +10888,11 @@ void handleType2Command(char argument)
                 SerialM.println("YPbPr:defauit");
             }
             readYUVtoRGBConversion();
+            uopt->colorSaturation = 0;
+            uopt->colorTint = 0;
+            uopt->colorYGain = 0;
+            uopt->gbsColorR = uopt->gbsColorG = uopt->gbsColorB = 128;
+            colorPending = true;
             break;
         case 'I':
             if (irEnabled == 0) {
@@ -11043,6 +11237,107 @@ void startWebserver()
             saveUserPrefs();
         }
         request->send(200, "application/json", result ? "true" : "false");
+    });
+
+    // GBSC-MOD: geometry profiles, ADC filter, SOG level and PS2 profile.
+    server.on("/gbscmod", HTTP_GET, [](AsyncWebServerRequest *request) {
+        bool reload = false;
+
+        if (request->hasArg("geom")) {
+            int g = request->arg("geom").toInt();
+            if (g >= 0 && g <= 3) {
+                uopt->geometryMode = (uint8_t)g;
+                reload = true;
+            }
+        }
+        if (request->hasArg("adc")) {
+            if (request->arg("adc") == "next") {
+                uopt->adcFilterMode = (uopt->adcFilterMode + 1) % 5;
+            } else {
+                int a = request->arg("adc").toInt();
+                if (a >= 0 && a <= 4) uopt->adcFilterMode = (uint8_t)a;
+            }
+            reload = true;
+        }
+        if (request->hasArg("sog")) {
+            String s = request->arg("sog");
+            if (s == "auto") {
+                uopt->sogLevel = 0xFF;
+                sogAutoRequested = true;
+            } else if (s == "up" || s == "down") {
+                if (uopt->sogLevel == 0xFF) uopt->sogLevel = rto->currentLevelSOG;
+                if (s == "up" && uopt->sogLevel < 16) uopt->sogLevel++;
+                if (s == "down" && uopt->sogLevel > 0) uopt->sogLevel--;
+                sogAutoRequested = false;
+            } else {
+                int l = s.toInt();
+                if (l >= 0 && l <= 16) uopt->sogLevel = (uint8_t)l;
+            }
+            reload = true;
+        }
+        if (request->hasArg("sat")) {
+            int d = (request->arg("sat") == "up") ? 1 : -1;
+            uopt->colorSaturation = constrain(uopt->colorSaturation + d, -20, 20);
+            colorPending = true;
+        }
+        if (request->hasArg("tint")) {
+            int d = (request->arg("tint") == "up") ? 1 : -1;
+            uopt->colorTint = constrain(uopt->colorTint + d, -32, 32);
+            colorPending = true;
+        }
+        if (request->hasArg("rgb")) {
+            String c = request->arg("rgb");
+            int d = c.endsWith("up") ? 1 : -1;
+            if (c.startsWith("r")) {
+                uopt->gbsColorR = constrain((int)uopt->gbsColorR + d, 0, 255);
+            } else if (c.startsWith("g")) {
+                uopt->gbsColorG = constrain((int)uopt->gbsColorG + d, 0, 255);
+            } else if (c.startsWith("b")) {
+                uopt->gbsColorB = constrain((int)uopt->gbsColorB + d, 0, 255);
+            }
+            colorPending = true;
+        }
+        if (request->hasArg("ps2")) {
+            uopt->presetPreference = Output720P;
+            uopt->deintMode = 0;             // motion adaptive
+            uopt->wantVdsLineFilter = 1;
+            uopt->wantPeaking = 1;
+            uopt->wantStepResponse = 1;
+            uopt->nrMode = 1;                // NR low
+            uopt->peakingLevel = 1;
+            uopt->geometryMode = 1;          // 4:3 pillarbox
+            uopt->hdmiLimitedRange = 0;      // full range for VGA
+            uopt->adcFilterMode = 0;         // auto
+            uopt->sogLevel = 0xFF;           // auto
+            sogAutoRequested = true;
+            reload = true;
+        }
+        if (request->hasArg("reset") || request->hasArg("safe")) {
+            // Safe baseline after experimenting with ADC/SOG/geometry.
+            uopt->geometryMode = 0;          // 16:9
+            uopt->adcFilterMode = 0;         // auto
+            uopt->sogLevel = 0xFF;           // auto
+            uopt->nrMode = 0;
+            uopt->peakingLevel = 0;
+            uopt->blackLevel = 0;
+            uopt->hdmiLimitedRange = 0;
+            uopt->deintMode = 0;             // motion adaptive
+            uopt->wantVdsLineFilter = 0;
+            uopt->wantPeaking = 1;
+            uopt->wantStepResponse = 1;
+            sogAutoRequested = true;
+            if (request->hasArg("safe")) {
+                safeRebootRequested = true;
+            }
+            reload = true;
+        }
+
+        if (reload) {
+            // Never touch I2C / presets from the async web callback: the
+            // main loop applies and saves this after the request returns.
+            gbscModPending = true;
+        }
+        request->send(200, "text/plain", "ok");
     });
 
     server.on("/pro", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -11903,7 +12198,22 @@ void saveUserPrefs()
     f.write(bl / 100 + '0');
     f.write((bl / 10) % 10 + '0');
     f.write(bl % 10 + '0');
-    f.write(uopt->pillarbox4x3 + '0');
+    f.write(uopt->geometryMode + '0');
+    f.write(uopt->adcFilterMode + '0');
+    // SOG level: 99 = auto, 00..16 = manual
+    int sog = (uopt->sogLevel == 0xFF) ? 99 : uopt->sogLevel;
+    f.write(sog / 10 + '0');
+    f.write(sog % 10 + '0');
+    // Color: saturation/tint encoded +64, absolute Y gain (3 digits)
+    int sat = uopt->colorSaturation + 64;
+    f.write(sat / 10 + '0');
+    f.write(sat % 10 + '0');
+    int tint = uopt->colorTint + 64;
+    f.write(tint / 10 + '0');
+    f.write(tint % 10 + '0');
+    f.write(uopt->colorYGain / 100 + '0');
+    f.write((uopt->colorYGain / 10) % 10 + '0');
+    f.write(uopt->colorYGain % 10 + '0');
     f.close();
 }
 

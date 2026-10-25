@@ -145,6 +145,11 @@ enum TVMODE_PresetPreference : uint8_t {
     uint8_t  nrMode;                /* noise reduction: 0=off, 1=low, 2=medium, 3=high */ \
     uint8_t  peakingLevel;          /* peaking/sharpness gain: 0..3 */ \
     int8_t   blackLevel;            /* extra VDS_Y_OFST, -64..64 */ \
-    uint8_t  pillarbox4x3;          /* 1 = 4:3 active area centered in 720p output */
+    uint8_t  geometryMode;          /* 0=16:9, 1=4:3 pillarbox, 2=zoom, 3=overscan */ \
+    uint8_t  adcFilterMode;         /* 0=auto, 1=150, 2=110, 3=70, 4=40 MHz */ \
+    uint8_t  sogLevel;              /* 0xFF=auto, 0..16 manual */ \
+    int8_t   colorSaturation;       /* -20..20, added to U/V chroma gains */ \
+    int8_t   colorTint;             /* -32..32, U/V chroma offset shift */ \
+    uint8_t  colorYGain;            /* 0 = no override, else VDS_Y_GAIN */
 
 #endif // OPTIONS_PRO_H_

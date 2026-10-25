@@ -14,7 +14,6 @@ Based on [RetroScaler/gbsc-pro](https://github.com/RetroScaler/gbsc-pro), which 
 
 ## Fork changes
 
-- **Experimental 1280x800 mode removed**: the tested panel expects a 69.3 MHz timing and rejected the available internal clocks over VGA (no Si5351 detected).
 - **4:3 pillarbox for 720p** (experimental) — 960 active pixels centered in a 1280x720 frame instead of stretching 4:3 content to 16:9.
 - **VDS Noise Reduction** (Off/Low/Medium/High) and **peaking level (sharp+)** controls in the web UI Filters section (experimental).
 - **Persistent black level** (Y offset) across reboots and preset reloads.
@@ -127,7 +126,6 @@ Or [build it yourself](hardware/gerber/) using the open-source design files.
 
 ## Изменения форка
 
-- **Экспериментальный режим 1280x800 удалён**: проверенная панель ожидает тайминг 69.3 МГц и отвергла доступные внутренние клоки по VGA (Si5351 не обнаружен).
 - **4:3 pillarbox для 720p** (экспериментально) — 960 активных пикселей по центру кадра 1280x720 вместо растягивания 4:3 на 16:9.
 - **VDS Noise Reduction** (Off/Low/Medium/High) и **уровень peaking (sharp+)** в разделе Filters веб-интерфейса (экспериментально).
 - **Сохранение уровня чёрного** (Y offset) между перезагрузками и сменой пресетов.

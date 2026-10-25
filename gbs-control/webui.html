@@ -1811,22 +1811,12 @@ section[name="alert"] {
                   <div class="gbs-icon">details</div>
                   <div>sharp+</div>
                 </button>
-                <button
-                  gbs-message="G"
-                  gbs-message-type="user"
-                  gbs-click="normal"
-                  class="gbs-button gbs-button__control gbs-button__secondary"
-                >
-                  <div class="gbs-icon">crop_16_9</div>
-                  <div>4:3</div>
-                </button>
               </div>
               <ul class="gbs-help">
                 <!-- prettier-ignore -->
                 <li>Peaking increases contrast around horizontal brightness steps, and is recommended.</li>
                 <li>Step Response increases the sharpness of horizontal color steps, and is recommended.</li>
                 <li>NR cycles VDS noise reduction Off/Low/Med/High. Sharp+ cycles peaking gain 0..3.</li>
-                <li>4:3 adds pillarbox bars for 480i/480p sources on 720p output (960 px centered).</li>
               </ul>
           </fieldset>
           <fieldset class="gbs-fieldset filters">
@@ -1915,6 +1905,56 @@ section[name="alert"] {
               </button>
             </div>
             <div class="gbs-flex">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?sat=down')">
+                <div class="gbs-icon">remove_circle_outline</div>
+                <div>Saturation</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?sat=up')">
+                <div class="gbs-icon">add_circle_outline</div>
+                <div>Saturation</div>
+              </button>
+            </div>
+            <div class="gbs-flex">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?tint=down')">
+                <div class="gbs-icon">remove_circle_outline</div>
+                <div>Tint</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?tint=up')">
+                <div class="gbs-icon">add_circle_outline</div>
+                <div>Tint</div>
+              </button>
+            </div>
+            <div class="gbs-flex">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?rgb=r_down')">
+                <div class="gbs-icon">remove_circle_outline</div>
+                <div>Red</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?rgb=r_up')">
+                <div class="gbs-icon">add_circle_outline</div>
+                <div>Red</div>
+              </button>
+            </div>
+            <div class="gbs-flex">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?rgb=g_down')">
+                <div class="gbs-icon">remove_circle_outline</div>
+                <div>Green</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?rgb=g_up')">
+                <div class="gbs-icon">add_circle_outline</div>
+                <div>Green</div>
+              </button>
+            </div>
+            <div class="gbs-flex">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?rgb=b_down')">
+                <div class="gbs-icon">remove_circle_outline</div>
+                <div>Blue</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?rgb=b_up')">
+                <div class="gbs-icon">add_circle_outline</div>
+                <div>Blue</div>
+              </button>
+            </div>
+            <div class="gbs-flex">
               <button
                 gbs-message="O"
                 gbs-message-type="user"
@@ -1938,6 +1978,80 @@ section[name="alert"] {
               <!-- prettier-ignore -->
               <li>Pb/U gain - change blue-luma gain.</li>
               <li>Pr/V gain - change red-luma gain.</li>
+              <li>Saturation moves both chroma gains; Tint shifts chroma offsets.</li>
+              <li>Red/Green/Blue adjust color temperature (white balance); changes are saved.</li>
+            </ul>
+          </fieldset>
+
+          <fieldset class="gbs-fieldset filters">
+            <legend class="gbs-fieldset__legend gbs-fieldset__legend--help">
+              <div class="gbs-icon">tune</div>
+              <div>GBSC-MOD</div>
+            </legend>
+            <div class="gbs-flex gbs-margin__bottom--8">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?geom=0')">
+                <div class="gbs-icon">aspect_ratio</div>
+                <div>16:9</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?geom=1')">
+                <div class="gbs-icon">crop_square</div>
+                <div>4:3</div>
+              </button>
+            </div>
+            <div class="gbs-flex gbs-margin__bottom--8">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?geom=2')">
+                <div class="gbs-icon">zoom_out_map</div>
+                <div>Zoom</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?geom=3')">
+                <div class="gbs-icon">crop_free</div>
+                <div>Overscan</div>
+              </button>
+            </div>
+            <div class="gbs-flex gbs-margin__bottom--8">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?adc=next')">
+                <div class="gbs-icon">tune</div>
+                <div>ADC</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?sog=down')">
+                <div class="gbs-icon">remove</div>
+                <div>SOG-</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?sog=up')">
+                <div class="gbs-icon">add</div>
+                <div>SOG+</div>
+              </button>
+            </div>
+            <div class="gbs-flex">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?ps2=1')">
+                <div class="gbs-icon">sports_esports</div>
+                <div>PS2 profile</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?sog=auto')">
+                <div class="gbs-icon">restart_alt</div>
+                <div>SOG auto</div>
+              </button>
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?reset=1')">
+                <div class="gbs-icon">settings_backup_restore</div>
+                <div>Reset image</div>
+              </button>
+            </div>
+            <ul class="gbs-help">
+              <!-- prettier-ignore -->
+              <li>16:9 / 4:3 / Zoom / Overscan apply to 720p SD/ED sources. Zoom/Overscan are experimental: if the image distorts, use Reset image or Safe reboot.</li>
+              <li>ADC cycles Auto / 150 / 110 / 70 / 40 MHz. SOG+ / SOG- set the sync-on-green level; SOG auto restores automatic level.</li>
+              <li>PS2 profile: 720p, adaptive deinterlace, line filter, peaking, NR low, 4:3, full range.</li>
+              <li>Reset image: 16:9, ADC/SOG auto, NR/peaking off, full range — recovery baseline.</li>
+            </ul>
+            <div class="gbs-flex gbs-margin__bottom--8">
+              <button class="gbs-button gbs-button__control" onclick="fetch('/gbscmod?safe=1')">
+                <div class="gbs-icon">settings_backup_restore</div>
+                <div>Safe reboot</div>
+              </button>
+            </div>
+            <ul class="gbs-help">
+              <!-- prettier-ignore -->
+              <li>Safe reboot: resets experimental ADC/SOG/geometry settings to safe defaults and reboots the GBS. Use it if the image is distorted or sync is lost.</li>
             </ul>
           </fieldset>
         </section>
