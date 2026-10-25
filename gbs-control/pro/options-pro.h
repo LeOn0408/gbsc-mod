@@ -143,6 +143,8 @@ enum TVMODE_PresetPreference : uint8_t {
     uint8_t  slotSyncwatcherMode;   /* 0=inherit global, 1=force ON, 2=force OFF */ \
     /* VDS image processing globals */ \
     uint8_t  nrMode;                /* noise reduction: 0=off, 1=low, 2=medium, 3=high */ \
-    uint8_t  peakingLevel;          /* peaking/sharpness gain: 0..3 */
+    uint8_t  peakingLevel;          /* peaking/sharpness gain: 0..3 */ \
+    int8_t   blackLevel;            /* extra VDS_Y_OFST, -64..64 */ \
+    uint8_t  pillarbox4x3;          /* 1 = 4:3 active area centered in 720p output */
 
 #endif // OPTIONS_PRO_H_

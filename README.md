@@ -10,6 +10,18 @@ Converts retro console video signals to HDMI up to 1080p with low latency, advan
 
 Based on [RetroScaler/gbsc-pro](https://github.com/RetroScaler/gbsc-pro), which is a fork of [gbs-control](https://github.com/ramapcsx2/gbs-control) by ramapcsx2.
 
+> **Fork note (`gbsc-mod`):** all changes below were developed and tested on a **GBSC (original gbs-control hardware), not on GBSC PRO**. The GBSC PRO-specific hardware features (ADV7280/ADV7391 AV module, etc.) were not verified on this fork's test unit.
+
+## Fork changes
+
+- **720p-focused output** for 16:10 VGA monitors. The experimental 1280x800 mode was removed: the tested panel expects a 69.3 MHz timing and rejected the available internal clocks over VGA (no Si5351 detected).
+- **4:3 pillarbox for 720p** (experimental) — 960 active pixels centered in a 1280x720 frame instead of stretching 4:3 content to 16:9.
+- **VDS Noise Reduction** (Off/Low/Medium/High) and **peaking level (sharp+)** controls in the web UI Filters section (experimental).
+- **Persistent horizontal screen position and black level** (Y offset) across reboots and preset reloads.
+- **OTA over WiFi**: ArduinoOTA starts automatically after the station connects (hostname `gbsc-mod`); use the `gbsc-pro-ota` PlatformIO environment. No USB needed after the first flash.
+- **HDMI Limited Range now defaults to OFF**, which is correct for direct VGA/component output. Use HD/SD/ALL only for HDMI converters that flag limited range.
+- Added `AGENTS.md` with build and firmware architecture notes.
+
 ## Links
 
 [Manual](https://www.retroscaler.com/?page_id=480) | [Discord](https://discord.com/invite/2MMWRkVRbk) | [Video Tutorial](https://www.youtube.com/playlist?list=PLQ6X-Dl0NtDnZm5v3n3IgvNOSrBsg7s7T)
@@ -70,13 +82,20 @@ Based on [RetroScaler/gbsc-pro](https://github.com/RetroScaler/gbsc-pro), which 
 ```bash
 # ESP8266 firmware
 cd gbs-control && pio run
+# Windows / PlatformIO installed via pip: python -m platformio run
+
+# OTA over WiFi (ArduinoOTA starts automatically after WiFi connect)
+cd gbs-control
+python -m platformio run -e gbsc-pro-ota -t upload --upload-port <device-ip>
 
 # HC32 firmware
 cd adv-controller && make
 
-# Web interface
-cd gbs-control/public && npm run build
+# Web interface (needs bash + gzip + xxd for scripts/html2h.sh)
+cd gbs-control/public && npm install && npm run build
 ```
+
+The web UI is embedded as a gzipped blob (`gbs-control/webui_html.h`). Editing `webui.html` or `webui_html.h` alone has no effect; edit `public/src/index.html.tpl` / `index.ts` and rebuild.
 
 ## Hardware
 

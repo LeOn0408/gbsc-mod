@@ -1118,6 +1118,67 @@ void applyPeakingLevel()
     }
 }
 
+// User black level offset on top of color balance / limited-range compensation.
+void applyBlackLevel()
+{
+    if (uopt->blackLevel == 0) {
+        return;
+    }
+    int16_t y = (int8_t)GBS::VDS_Y_OFST::read() + uopt->blackLevel;
+    if (y > 127) y = 127;
+    if (y < -128) y = -128;
+    GBS::VDS_Y_OFST::write((uint8_t)(int8_t)y);
+}
+
+// 4:3 pillarbox for 1280x720 output: keep 720 lines, use 960 active pixels
+// centered horizontally (160 px black bars left/right).
+void applyPillarbox4x3()
+{
+    if (!uopt->pillarbox4x3) {
+        return;
+    }
+    if (rto->presetID != 0x03 && rto->presetID != 0x13) {
+        return; // only 1280x720 presets
+    }
+    if (rto->videoStandardInput > 4) {
+        return; // only SD/ED sources
+    }
+
+    bool pal = (rto->presetID == 0x13);
+    GBS::VDS_HSCALE::write(pal ? 835 : 683);
+    GBS::VDS_HSCALE_BYPS::write(0);
+
+    uint16_t htotal = GBS::VDS_HSYNC_RST::read();
+    if (htotal == 0) return;
+
+    int32_t hbStart = GBS::VDS_HB_SP::read();
+    int32_t hbStop = GBS::VDS_HB_ST::read();
+    if (hbStop < hbStart) hbStop += htotal;
+    int32_t width = hbStop - hbStart;
+    if (width <= 0) return;
+
+    int32_t newWidth = (width * 3) / 4;
+    int32_t newStart = hbStart + (width - newWidth) / 2;
+    int32_t newStop = newStart + newWidth;
+
+    GBS::VDS_HB_SP::write((uint16_t)(newStart % htotal));
+    GBS::VDS_HB_ST::write((uint16_t)(newStop % htotal));
+
+    int32_t dhbStart = GBS::VDS_DIS_HB_SP::read();
+    int32_t dhbStop = GBS::VDS_DIS_HB_ST::read();
+    if (dhbStop < dhbStart) dhbStop += htotal;
+    int32_t dwidth = dhbStop - dhbStart;
+    if (dwidth > 0) {
+        int32_t dnewWidth = (dwidth * 3) / 4;
+        int32_t dnewStart = dhbStart + (dwidth - dnewWidth) / 2;
+        int32_t dnewStop = dnewStart + dnewWidth;
+        GBS::VDS_DIS_HB_SP::write((uint16_t)(dnewStart % htotal));
+        GBS::VDS_DIS_HB_ST::write((uint16_t)(dnewStop % htotal));
+    }
+
+    SerialM.println(F("4:3 pillarbox"));
+}
+
 /// Write ADC gain registers, and save in adco->r_gain to properly transfer it
 /// across loading presets or passthrough.
 void setAdcGain(uint8_t gain) {
@@ -4244,9 +4305,15 @@ void doPostPresetLoadSteps()
     // HDMI Limited Range (must be after applyRGBtoYUVConversion)
     applyHdmiLimitedRange();
 
+    // User black level offset (after color balance / range compensation)
+    applyBlackLevel();
+
     // VDS noise reduction / peaking levels (override preset defaults)
     applyNoiseReduction();
     applyPeakingLevel();
+
+    // Optional 4:3 pillarbox for 720p
+    applyPillarbox4x3();
 
     SerialM.print(F("\npreset applied: "));
     if (rto->presetID == 0x01 || rto->presetID == 0x11)
@@ -4372,7 +4439,7 @@ static File initSlotsFile()
     emptySlot.advCombChromaModePAL = ADV_COMB_CHROMA_MODE_PAL_DEFAULT;
     emptySlot.advCombChromaTapsPAL = ADV_COMB_CHROMA_TAPS_PAL_DEFAULT;
     // HDMI Limited Range default
-    emptySlot.hdmiLimitedRange = 1;  // Default 1 (HD only)
+    emptySlot.hdmiLimitedRange = 0;  // Default 0: safe for VGA/component
     // ADV7280 Hue default
     emptySlot.advHue = 128;  // Default 128 (0°)
     // Developer / Screen tweak defaults (all "no override"), per group (PAL/NTSC)
@@ -7795,7 +7862,7 @@ void loadDefaultUserOptions()
     uopt->advFilterCombNTSC = ADV_FILTER_COMB_NTSC_DEFAULT;
     uopt->advFilterCombPAL = ADV_FILTER_COMB_PAL_DEFAULT;
     // HDMI Limited Range
-    uopt->hdmiLimitedRange = 1;
+    uopt->hdmiLimitedRange = 0;
     // Developer menu / Screen tweaks defaults (all "no override"), per group (PAL/NTSC)
     uopt->devHTotal_ntsc = 0;        uopt->devHTotal_pal = 0;
     uopt->devPllDiv_ntsc = 0;        uopt->devPllDiv_pal = 0;
@@ -7814,6 +7881,8 @@ void loadDefaultUserOptions()
     // VDS image processing defaults
     uopt->nrMode = 0;
     uopt->peakingLevel = 0;
+    uopt->blackLevel = 0;
+    uopt->pillarbox4x3 = 0;
 }
 
 //RF_PRE_INIT() {
@@ -8294,7 +8363,7 @@ void setup()
             if (uopt->advCombChromaTapsPAL > 3) uopt->advCombChromaTapsPAL = ADV_COMB_CHROMA_TAPS_PAL_DEFAULT;
             // HDMI Limited Range
             uopt->hdmiLimitedRange = (uint8_t)(f.read() - '0');
-            if (uopt->hdmiLimitedRange > 3) uopt->hdmiLimitedRange = 1;
+            if (uopt->hdmiLimitedRange > 3) uopt->hdmiLimitedRange = 0;
             // ADV Hue
             uopt->advHue = (uint8_t)((f.read() - '0') * 100 + (f.read() - '0') * 10 + (f.read() - '0'));
             if (uopt->advHue > 254) uopt->advHue = 128;
@@ -8325,6 +8394,16 @@ void setup()
             uopt->nrMode = (nr >= '0' && nr <= '3') ? (uint8_t)(nr - '0') : 0;
             int pl = f.read();
             uopt->peakingLevel = (pl >= '0' && pl <= '3') ? (uint8_t)(pl - '0') : 0;
+            // Black level (3 digits, value + 100) and 4:3 pillarbox flag
+            int b1 = f.read(), b2 = f.read(), b3 = f.read();
+            if (b1 >= '0' && b1 <= '9' && b2 >= '0' && b2 <= '9' && b3 >= '0' && b3 <= '9') {
+                int bl = (b1 - '0') * 100 + (b2 - '0') * 10 + (b3 - '0');
+                uopt->blackLevel = (bl >= 36 && bl <= 164) ? (int8_t)(bl - 100) : 0;
+            } else {
+                uopt->blackLevel = 0;
+            }
+            int pb = f.read();
+            uopt->pillarbox4x3 = (pb == '1') ? 1 : 0;
 
             f.close();
         }
@@ -10427,6 +10506,13 @@ void handleType2Command(char argument)
             SerialM.print(F("Noise reduction: "));
             SerialM.println(uopt->nrMode);
             break;
+        case 'G': // 4:3 pillarbox toggle (720p)
+            uopt->pillarbox4x3 = !uopt->pillarbox4x3;
+            saveUserPrefs();
+            SerialM.print(F("4:3 pillarbox: "));
+            SerialM.println(uopt->pillarbox4x3 ? "on" : "off");
+            applyPresets(rto->videoStandardInput);
+            break;
         case 'Y': // Peaking level: 0..3
             uopt->peakingLevel = (uopt->peakingLevel + 1) & 0x03;
             applyNoiseReduction();
@@ -10458,17 +10544,23 @@ void handleType2Command(char argument)
             }
             break;
         case 'Z':
-            // Y_offset +
+            // Y_offset + (Brightness +, persisted as black level)
             GBS::VDS_Y_OFST::write(GBS::VDS_Y_OFST::read() + 1);
             if (GBS::VDS_Y_OFST::read() == 0x80)
                 GBS::VDS_Y_OFST::write(0x00);
+            uopt->blackLevel = constrain(uopt->blackLevel + 1, -64, 64);
+            screenMoveDirty = true;
+            screenMoveLastChange = millis();
             break;
         case 'T':
-            // Y_offset -
+            // Y_offset - (Brightness -, persisted as black level)
             GBS::VDS_Y_OFST::write(GBS::VDS_Y_OFST::read() - 1);
             if (GBS::VDS_Y_OFST::read() == 0x7F) {
                 GBS::VDS_Y_OFST::write(0x00);
             }
+            uopt->blackLevel = constrain(uopt->blackLevel - 1, -64, 64);
+            screenMoveDirty = true;
+            screenMoveLastChange = millis();
             break;
         case 'N':
             // Contrast +
@@ -11798,13 +11890,20 @@ void saveUserPrefs()
     f.write((uopt->advHue / 10) % 10 + '0');
     f.write(uopt->advHue % 10 + '0');
     // Screen horizontal move (PRO): 4 digits NTSC + 4 digits PAL
-    char hbuf[9];
-    snprintf(hbuf, sizeof(hbuf), "%04u%04u",
-             (unsigned)uopt->screenHMove_ntsc, (unsigned)uopt->screenHMove_pal);
+    unsigned hmN = uopt->screenHMove_ntsc; if (hmN > 9999) hmN = 9999;
+    unsigned hmP = uopt->screenHMove_pal;  if (hmP > 9999) hmP = 9999;
+    char hbuf[12];
+    snprintf(hbuf, sizeof(hbuf), "%04u%04u", hmN, hmP);
     f.write((const uint8_t *)hbuf, 8);
     // Image processing levels
     f.write(uopt->nrMode + '0');
     f.write(uopt->peakingLevel + '0');
+    // Black level: encode -64..64 as 036..164 (3 digits)
+    int bl = uopt->blackLevel + 100;
+    f.write(bl / 100 + '0');
+    f.write((bl / 10) % 10 + '0');
+    f.write(bl % 10 + '0');
+    f.write(uopt->pillarbox4x3 + '0');
     f.close();
 }
 

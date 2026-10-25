@@ -1811,12 +1811,22 @@ section[name="alert"] {
                   <div class="gbs-icon">details</div>
                   <div>sharp+</div>
                 </button>
+                <button
+                  gbs-message="G"
+                  gbs-message-type="user"
+                  gbs-click="normal"
+                  class="gbs-button gbs-button__control gbs-button__secondary"
+                >
+                  <div class="gbs-icon">crop_16_9</div>
+                  <div>4:3</div>
+                </button>
               </div>
               <ul class="gbs-help">
                 <!-- prettier-ignore -->
                 <li>Peaking increases contrast around horizontal brightness steps, and is recommended.</li>
                 <li>Step Response increases the sharpness of horizontal color steps, and is recommended.</li>
                 <li>NR cycles VDS noise reduction Off/Low/Med/High. Sharp+ cycles peaking gain 0..3.</li>
+                <li>4:3 adds pillarbox bars for 480i/480p sources on 720p output (960 px centered).</li>
               </ul>
           </fieldset>
           <fieldset class="gbs-fieldset filters">
@@ -2101,6 +2111,7 @@ section[name="alert"] {
                   <ul class="gbs-help">
                     <li>Workaround for MS9288 and similar VGA-to-HDMI converters that mark certain resolutions as Limited Range.</li>
                     <li>OFF: No compensation. HD: Apply to 720p/1080p. SD: Apply to 480p/576p/960p/1024p. ALL: Apply to all resolutions.</li>
+                    <li>Use OFF for direct VGA/component output, otherwise black is displayed as grey.</li>
                     <li>If colors appear washed out or clipped at certain resolutions, try cycling through these options.</li>
                   </ul>
                 </td>
