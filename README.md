@@ -14,11 +14,13 @@ Based on [RetroScaler/gbsc-pro](https://github.com/RetroScaler/gbsc-pro), which 
 
 ## Fork changes
 
-- **4:3 pillarbox for 720p** (experimental) — 960 active pixels centered in a 1280x720 frame instead of stretching 4:3 content to 16:9.
-- **VDS Noise Reduction** (Off/Low/Medium/High) and **peaking level (sharp+)** controls in the web UI Filters section (experimental).
-- **Persistent black level** (Y offset) across reboots and preset reloads.
+- **Geometry presets for 720p**: 16:9, 4:3 pillarbox (960 active pixels centered), Zoom and Overscan. Zoom/Overscan are experimental and session-only; after reboot the saved mode falls back to 16:9.
+- **Image controls**: VDS Noise Reduction (Off/Low/Medium/High), peaking level (sharp+), ADC bandwidth (Auto/150/110/70/40 MHz), SOG level (+/-/auto), saturation, tint, RGB balance and persistent contrast. ADC/SOG are session-only and boot in auto.
+- **Persistent picture settings**: black level (Y offset), contrast, saturation, tint and RGB balance survive reboots and preset reloads.
+- **PS2 profile**: one click sets 720p, motion-adaptive deinterlace, line filter, peaking, NR Low, 4:3 pillarbox and full range for VGA.
+- **Recovery**: Reset image and Safe reboot restore a known-good baseline (ADC/SOG auto, 16:9 geometry, no NR/peaking) and reboot when needed.
 - **OTA over WiFi**: ArduinoOTA starts automatically after the station connects (hostname `gbsc-mod`); use the `gbsc-pro-ota` PlatformIO environment. No USB needed after the first flash.
-- **HDMI Limited Range now defaults to OFF**, which is correct for direct VGA/component output. Use HD/SD/ALL only for HDMI converters that flag limited range.
+- **HDMI Limited Range defaults to OFF**, correct for direct VGA/component output. Use HD/SD/ALL only for HDMI converters that flag limited range.
 - Added `AGENTS.md` with build and firmware architecture notes.
 
 ## Links
@@ -126,11 +128,13 @@ Or [build it yourself](hardware/gerber/) using the open-source design files.
 
 ## Изменения форка
 
-- **4:3 pillarbox для 720p** (экспериментально) — 960 активных пикселей по центру кадра 1280x720 вместо растягивания 4:3 на 16:9.
-- **VDS Noise Reduction** (Off/Low/Medium/High) и **уровень peaking (sharp+)** в разделе Filters веб-интерфейса (экспериментально).
-- **Сохранение уровня чёрного** (Y offset) между перезагрузками и сменой пресетов.
+- **Геометрические пресеты для 720p**: 16:9, 4:3 pillarbox (960 активных пикселей по центру), Zoom и Overscan. Zoom/Overscan экспериментальные и действуют только до перезагрузки — после ребута возвращается 16:9.
+- **Настройки изображения**: VDS Noise Reduction (Off/Low/Medium/High), уровень peaking (sharp+), полоса ADC (Auto/150/110/70/40 МГц), уровень SOG (+/-/auto), насыщенность, tint, RGB-баланс и сохраняемый контраст. ADC/SOG действуют в рамках сессии, при загрузке — auto.
+- **Сохраняемые настройки картинки**: уровень чёрного (Y offset), контраст, насыщенность, tint и RGB-баланс переживают перезагрузку и смену пресетов.
+- **Профиль PS2**: одной кнопкой включает 720p, motion-adaptive деинтерлейс, line filter, peaking, NR Low, 4:3 pillarbox и full range для VGA.
+- **Восстановление**: кнопки Reset image и Safe reboot возвращают безопасный baseline (ADC/SOG auto, геометрия 16:9, без NR/peaking) и при необходимости перезагружают GBS.
 - **OTA по WiFi**: ArduinoOTA запускается автоматически после подключения к сети (hostname `gbsc-mod`); используйте окружение PlatformIO `gbsc-pro-ota`. После первой прошивки USB не нужен.
-- **HDMI Limited Range теперь по умолчанию OFF** — это правильно для прямого вывода VGA/компонента. HD/SD/ALL используйте только для HDMI-конвертеров, которые помечают сигнал как limited range.
+- **HDMI Limited Range по умолчанию OFF** — это правильно для прямого вывода VGA/компонента. HD/SD/ALL используйте только для HDMI-конвертеров, которые помечают сигнал как limited range.
 - Добавлен `AGENTS.md` с заметками по сборке и архитектуре прошивки.
 
 ## Ссылки
