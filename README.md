@@ -14,10 +14,10 @@ Based on [RetroScaler/gbsc-pro](https://github.com/RetroScaler/gbsc-pro), which 
 
 ## Fork changes
 
-- **720p-focused output** for 16:10 VGA monitors. The experimental 1280x800 mode was removed: the tested panel expects a 69.3 MHz timing and rejected the available internal clocks over VGA (no Si5351 detected).
+- **Experimental 1280x800 mode removed**: the tested panel expects a 69.3 MHz timing and rejected the available internal clocks over VGA (no Si5351 detected).
 - **4:3 pillarbox for 720p** (experimental) — 960 active pixels centered in a 1280x720 frame instead of stretching 4:3 content to 16:9.
 - **VDS Noise Reduction** (Off/Low/Medium/High) and **peaking level (sharp+)** controls in the web UI Filters section (experimental).
-- **Persistent horizontal screen position and black level** (Y offset) across reboots and preset reloads.
+- **Persistent black level** (Y offset) across reboots and preset reloads.
 - **OTA over WiFi**: ArduinoOTA starts automatically after the station connects (hostname `gbsc-mod`); use the `gbsc-pro-ota` PlatformIO environment. No USB needed after the first flash.
 - **HDMI Limited Range now defaults to OFF**, which is correct for direct VGA/component output. Use HD/SD/ALL only for HDMI converters that flag limited range.
 - Added `AGENTS.md` with build and firmware architecture notes.
@@ -127,10 +127,10 @@ Or [build it yourself](hardware/gerber/) using the open-source design files.
 
 ## Изменения форка
 
-- **Ориентация на 720p** для VGA-мониторов 16:10. Экспериментальный режим 1280x800 удалён: проверенная панель ожидает тайминг 69.3 МГц и отвергла доступные внутренние клоки по VGA (Si5351 не обнаружен).
+- **Экспериментальный режим 1280x800 удалён**: проверенная панель ожидает тайминг 69.3 МГц и отвергла доступные внутренние клоки по VGA (Si5351 не обнаружен).
 - **4:3 pillarbox для 720p** (экспериментально) — 960 активных пикселей по центру кадра 1280x720 вместо растягивания 4:3 на 16:9.
 - **VDS Noise Reduction** (Off/Low/Medium/High) и **уровень peaking (sharp+)** в разделе Filters веб-интерфейса (экспериментально).
-- **Сохранение горизонтальной позиции и уровня чёрного** (Y offset) между перезагрузками и сменой пресетов.
+- **Сохранение уровня чёрного** (Y offset) между перезагрузками и сменой пресетов.
 - **OTA по WiFi**: ArduinoOTA запускается автоматически после подключения к сети (hostname `gbsc-mod`); используйте окружение PlatformIO `gbsc-pro-ota`. После первой прошивки USB не нужен.
 - **HDMI Limited Range теперь по умолчанию OFF** — это правильно для прямого вывода VGA/компонента. HD/SD/ALL используйте только для HDMI-конвертеров, которые помечают сигнал как limited range.
 - Добавлен `AGENTS.md` с заметками по сборке и архитектуре прошивки.
