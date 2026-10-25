@@ -112,3 +112,116 @@ Or [build it yourself](hardware/gerber/) using the open-source design files.
 ## Thanks
 
 - [@ramapcsx2](https://github.com/ramapcsx2) for [gbs-control](https://github.com/ramapcsx2/gbs-control)
+
+---
+
+# Перевод на русский
+
+Кастомная прошивка для видеоапскейлера **GBSC-Pro** от **Brisma**.
+
+Преобразует сигналы ретро-консолей в HDMI до 1080p с низкой задержкой, продвинутой обработкой цвета и широкими возможностями настройки.
+
+Основано на [RetroScaler/gbsc-pro](https://github.com/RetroScaler/gbsc-pro), который является форком [gbs-control](https://github.com/ramapcsx2/gbs-control) от ramapcsx2.
+
+> **Примечание о форке (`gbsc-mod`):** все изменения ниже разработаны и проверены на **GBSC (оригинальное железо gbs-control), а не на GBSC PRO**. Аппаратные функции, специфичные для GBSC PRO (AV-модуль ADV7280/ADV7391 и т.д.), на тестовом экземпляре этого форка не проверялись.
+
+## Изменения форка
+
+- **Ориентация на 720p** для VGA-мониторов 16:10. Экспериментальный режим 1280x800 удалён: проверенная панель ожидает тайминг 69.3 МГц и отвергла доступные внутренние клоки по VGA (Si5351 не обнаружен).
+- **4:3 pillarbox для 720p** (экспериментально) — 960 активных пикселей по центру кадра 1280x720 вместо растягивания 4:3 на 16:9.
+- **VDS Noise Reduction** (Off/Low/Medium/High) и **уровень peaking (sharp+)** в разделе Filters веб-интерфейса (экспериментально).
+- **Сохранение горизонтальной позиции и уровня чёрного** (Y offset) между перезагрузками и сменой пресетов.
+- **OTA по WiFi**: ArduinoOTA запускается автоматически после подключения к сети (hostname `gbsc-mod`); используйте окружение PlatformIO `gbsc-pro-ota`. После первой прошивки USB не нужен.
+- **HDMI Limited Range теперь по умолчанию OFF** — это правильно для прямого вывода VGA/компонента. HD/SD/ALL используйте только для HDMI-конвертеров, которые помечают сигнал как limited range.
+- Добавлен `AGENTS.md` с заметками по сборке и архитектуре прошивки.
+
+## Ссылки
+
+[Руководство](https://www.retroscaler.com/?page_id=480) | [Discord](https://discord.com/invite/2MMWRkVRbk) | [Видеоинструкция](https://www.youtube.com/playlist?list=PLQ6X-Dl0NtDnZm5v3n3IgvNOSrBsg7s7T)
+
+## Возможности
+
+### Видеовход
+- **S-Video** и **Composite** (активная обработка через ADV7280)
+- **RGB**: RGBS, RGsB, RGBHV с автоопределением синхронизации
+- **Component** (YPbPr)
+- **VGA** passthrough
+
+### Видеовыход
+- HDMI до **1080p**
+- Различные выходные разрешения: 480p, 720p, 960p, 1024p, 1080p
+
+### Обработка изображения
+- **I2P (Interlace to Progressive)**: motion-adaptive деинтерлейсинг
+- **ACE (Adaptive Contrast Enhancement)**: динамический контраст/насыщенность
+- **Видеофильтры**: shaping, comb, CTI для S-Video/Composite
+- **Scanlines**: регулируемая интенсивность и стиль
+- **BCSH**: яркость, контраст, насыщенность, оттенок
+- **ADC Gain**: усиление Y/U/V с сохранением настроек
+- **Цветовой стандарт**: соответствие ITU-R BT.601
+
+### Интерфейс
+- **TV OSD**: экранное меню через STV9426 (4 темы: Classic, Dark, Light, Retro)
+- **OLED-меню**: ИК-пульт с поддержкой повторов
+- **Web UI**: панель управления по WiFi
+- **36 слотов профилей**: A-Z, 0-9 с настройками для каждого входа
+- **Меню разработчика**: расширенные настройки железа и I2C-команды
+
+### Система
+- **Автопереключение**: автоматическое определение входа
+- **Низкая задержка**: обработка сигнала в реальном времени
+- **Система пресетов**: сохранение/загрузка полных конфигураций
+- **Регулировка громкости**: поддержка аудиочипа PT2257
+
+## Компоненты
+
+### [gbs-control/](gbs-control/)
+**Прошивка ESP8266** — основной контроллер на ESP8266. Управляет видеоскейлером TV5725, TV OSD (STV9426), OLED-меню с ИК-пультом, веб-интерфейсом и общается с ADV-контроллером по UART.
+
+### [adv-controller/](adv-controller/)
+**Прошивка HC32F460** — вторичный контроллер, управляющий ADV7280 (видеодекодер для S-Video/Composite) и ADV7391 (видеоэнкодер). Принимает команды от ESP8266 и управляет чипами ADV по I2C.
+
+### [adv-manager/](adv-manager/)
+**Python GUI** — настольное приложение для отладки регистров ADV7280/ADV7391 через последовательный порт. Полезно для проверки настроек обработки видео без перепрошивки.
+
+### [gbsc-pro-flasher/](gbsc-pro-flasher/)
+**Утилита прошивки** — кроссплатформенный GUI/CLI для прошивки ESP8266 и HC32. Автоматически определяет подключённые устройства, поддерживает drag & drop. Работает на Windows, macOS и Linux.
+
+### [hardware/](hardware/)
+**Аппаратные ресурсы** — файлы печатной платы (Gerber), BOM, даташиты на все микросхемы и симулятор ADV CLI для тестирования без реального железа.
+
+## Сборка
+
+```bash
+# Прошивка ESP8266
+cd gbs-control && pio run
+# Windows / PlatformIO, установленный через pip: python -m platformio run
+
+# OTA по WiFi (ArduinoOTA запускается автоматически после подключения к WiFi)
+cd gbs-control
+python -m platformio run -e gbsc-pro-ota -t upload --upload-port <device-ip>
+
+# Прошивка HC32
+cd adv-controller && make
+
+# Веб-интерфейс (нужны bash + gzip + xxd для scripts/html2h.sh)
+cd gbs-control/public && npm install && npm run build
+```
+
+Веб-интерфейс встроен в прошивку как gzip-блоб (`gbs-control/webui_html.h`). Редактирование только `webui.html` или `webui_html.h` ничего не меняет: правьте `public/src/index.html.tpl` / `index.ts` и пересобирайте.
+
+## Железо
+
+Готовые комплекты доступны в [официальном магазине](https://www.aliexpress.com/item/3256808268415575.html).
+
+Или [соберите самостоятельно](hardware/gerber/) по открытым файлам проекта.
+
+![](assets/product-01.jpg)
+
+## Сообщество
+
+[Создать issue](https://github.com/brisma/gbsc-pro/issues/new) или присоединиться к [Discord](https://discord.com/invite/2MMWRkVRbk).
+
+## Благодарности
+
+- [@ramapcsx2](https://github.com/ramapcsx2) за [gbs-control](https://github.com/ramapcsx2/gbs-control)
